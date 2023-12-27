@@ -1,0 +1,75 @@
+#CREATE EMBEDDINGS OF pdf FILE AND SAVE IT IN numpy FORMAT
+
+import PyPDF2
+import numpy as np
+import pandas as pd
+from text_embeddings import encode_text_to_embedding
+from tensorflow_encoder import get_encoder
+
+def get_pdf_doc_name():
+    pdf_doc_name = input('Please provide the pdf document name (eg myfilename.pdf) ?\n')
+    return pdf_doc_name
+
+def read_pdf_doc_to_df(pdf_name):
+    reader = PyPDF2.PdfReader(pdf_name)
+    pg_cnt = len(reader.pages)
+    book_txt_lst=[]
+    for n in range(8,pg_cnt):
+        txt=''
+        txt = reader.pages[n].extract_text().replace('\t',' ').replace('\n',' ')
+        txt_lst = txt.split('.')
+        for item in txt_lst:
+            book_txt_lst.append(item)
+    book_txt_lst_clean = list(set(book_txt_lst))
+    book_txt_lst_final=[]
+    idx=0
+    for item in book_txt_lst_clean:
+        item.strip()
+        t=(idx,item)
+        book_txt_lst_final.append(t)
+        idx+=1
+    pdf_df = pd.DataFrame(book_txt_lst_final,columns=['ids','Text'])
+    return pdf_df
+
+def save_df_to_csv(df,filename):
+    df.to_csv(filename+'.csv',index=False,header=['ids','Text'])
+
+def get_pdf_embdeddings(df,encoder):
+    #GET ENCODER FROM TENSORFLOW HUB
+    sentences_lst  = df.Text.tolist()[0:df.shape[0]-1]
+    pdf_embeddings = encode_text_to_embedding(text_encoder=encoder, sentences=sentences_lst )    
+    return pdf_embeddings
+
+def save_embeddings_to_np_file(pdf_embeddings,filename):
+    np.save(file=filename+'.npy',arr=pdf_embeddings)
+
+def validate_embeddings_file(filename,pdf_embeddings):
+    with open(filename+'.npy','rb') as fl:
+        pdf_embeddings_from_file = np.load(fl)
+    if np.array_equal(pdf_embeddings, pdf_embeddings_from_file):
+        return 'VALID'
+    else:
+        return 'INVALID'
+        
+        
+        
+if __name__ == "__main__":
+    pdf_doc_name        = get_pdf_doc_name()
+    filename            = pdf_doc_name.split('.')[0] #GET THE LEFT PART OF THE DOCUMENT NAME
+
+    print('\n\n******CONVERTING PDF TO DATAFRAME*********\n\n')
+    pdf_doc_df          = read_pdf_doc_to_df(pdf_doc_name)
+
+    print('\n\n******SAVING DATAFRAME TO CSV*********\n\n')
+    save_df_to_csv(pdf_doc_df,filename)
+    
+    encoder             = get_encoder()
+    
+    print('\n\n******CREATING EMBEDDINGS OF THE PDF(FROM DATAFRAME)*********\n\n')
+    pdf_embeddings      = get_pdf_embdeddings(pdf_doc_df,encoder)
+    
+    print('\n\n******SAVINGS EMBEDDINGS TO nyp BINARY FORMAT*********\n\n')
+    save_embeddings_to_np_file(pdf_embeddings,filename)
+    
+    print('\n\n******CHECKING IF THE EMBEDDING FILE IS VALID*********\n\n')
+    print('The Embeddings saved in file are : ',validate_embeddings_file(filename,pdf_embeddings))

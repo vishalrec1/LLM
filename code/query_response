@@ -1,0 +1,105 @@
+import google.cloud.aiplatform_v1beta1 as aiplatform_v1beta1
+from google.oauth2 import service_account
+from google.cloud import aiplatform
+
+PROJECT_ID   = "gcp-project-0523"
+REGION       = 'us-central1'
+scopes       = ["https://www.googleapis.com/auth/cloud-platform"]
+sa_file_path = 'gcp-project-0523-628d01f95284.json'
+credentials  = service_account.Credentials.from_service_account_file(sa_file_path, scopes=scopes)
+parameters = {"temperature": 0.2,
+              "max_output_tokens": 256,
+              "top_p": 0.95,
+              "top_k": 40
+             }
+
+print('Step 0 : GET QUERY FROM USER')
+#GET QUERY FROM USER
+#query_text = 'Summarize Role of ML Engineer'
+query_text = input('Please ask a question?\n')
+print(query_text)
+
+print('Step 1 : Getting Index Endpoint details')
+#Fill up domain name from above cell where "gca_resource" value is captured
+my_index_endpoint = aiplatform.MatchingEngineIndexEndpoint('projects/473197248954/locations/us-central1/indexEndpoints/6212108755539066880')
+
+print('Step 2 : Creating CLIENT_OPTION')
+CLIENT_OPTION = {"api_endpoint": my_index_endpoint.gca_resource.public_endpoint_domain_name }
+
+print('Step 3 : Creating vertex_ai_client')
+vertex_ai_client = aiplatform_v1beta1.MatchServiceClient(credentials=credentials,client_options=CLIENT_OPTION)
+
+
+print('Step 4 : Creating request')
+DEPLOYED_INDEX_ID = "pdf_st5_large_embeddings_index_deployed"
+
+request = aiplatform_v1beta1.FindNeighborsRequest(index_endpoint    = my_index_endpoint.resource_name,
+                                                  deployed_index_id = DEPLOYED_INDEX_ID
+                                                 )
+
+
+print('Step 5 : Get Encoder')
+#GET ENCODER FROM TENSORFLOW HUB
+from tensorflow_encoder import get_encoder
+encoder = get_encoder()
+
+print('Step 6 : Create Embeddings of the Query')
+from text_embeddings import encode_text_to_embedding
+test_embeddings = encode_text_to_embedding(text_encoder = encoder,
+                                           sentences    = [query_text]
+                                          )
+print('Step 7 : Create Datapoint')
+dp1 = aiplatform_v1beta1.IndexDatapoint(feature_vector = test_embeddings,
+                                        datapoint_id   ="0",
+                                       )
+
+
+print('Step 8 : Fire query to Matching Engine and Get response from Matching Engine')
+query = aiplatform_v1beta1.FindNeighborsRequest.Query(datapoint = dp1)
+
+request.queries=[]
+request.queries.append(query)
+
+response = vertex_ai_client.find_neighbors(request)
+
+
+print('Step 9 : Get Context')
+from google.protobuf.json_format import MessageToDict
+import pandas as pd
+
+dict_obj = MessageToDict(response._pb)
+df=pd.read_csv('book_txt.csv',header=0,sep=',',index_col=False,names=['ids','Text'])
+
+print('Query is :',query_text)
+#print('\n\n')
+#context=query_text+" :     \n"
+context=''
+for i in range(10):
+    datapoint = int(dict_obj['nearestNeighbors'][0]['neighbors'][i]['datapoint']['datapointId'])
+    distance = dict_obj['nearestNeighbors'][0]['neighbors'][i]['distance']
+    question = df[df.ids==datapoint].Text.values[0]
+    txt=''
+    txt = str(datapoint)+'   '+question+'        '+ str(distance)
+    print(txt)
+    context+=txt
+    #print (str(datapoint)+'   '+question+'        '+ str(distance))
+#print(context)
+
+print('Step 10 : Generate Response')
+import vertexai
+from vertexai.language_models import TextGenerationModel
+from slow_print import slow_type
+
+vertexai.init(project=PROJECT_ID, location=REGION)
+context = 'Provide a summary for the following article: '+context
+print('\n\n\n\n')
+print(context)
+print('\n\n\n\n')
+
+print('Below is the response to the Query :  ',query_text)
+print('\n\n')
+model    = TextGenerationModel.from_pretrained("text-bison@001")
+response = model.predict(context,**parameters)
+
+slow_type(response.text)
+print('\n\n')

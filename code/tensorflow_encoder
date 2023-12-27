@@ -1,0 +1,10 @@
+#GET ENCODER FROM TENSORFLOW HUB
+import tensorflow as tf
+import tensorflow_text as text  # Registers the ops.
+import tensorflow_hub as hub
+
+hub_url = "https://tfhub.dev/google/sentence-t5/st5-large/1"
+
+def get_encoder():
+    encoder = hub.KerasLayer(hub_url)
+    return encoder

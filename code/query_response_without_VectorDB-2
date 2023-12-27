@@ -1,0 +1,123 @@
+from google.cloud import aiplatform,storage,bigquery
+import os,PyPDF2,sys
+import pandas as pd
+import vertexai
+from vertexai.language_models import TextGenerationModel
+from slow_print import slow_type
+import numpy as np
+from typing import List
+
+def read_embedding_nyp_file(pdf_file_name):
+    with open(pdf_file_name+'.npy','rb') as fl:
+        pdf_embeddings_from_file = np.load(fl)
+    return pdf_embeddings_from_file
+
+def read_embeddings_metadata_from_csv(pdf_file_name):
+    embeddings_metadata_df=pd.read_csv(pdf_file_name+'.csv',header=0,sep=',',index_col=False,names=['ids','Text'])
+    return embeddings_metadata_df
+    
+# def read_pdf_doc_to_df(pdf_name):
+#     reader = PyPDF2.PdfReader(pdf_name)
+#     pg_cnt = len(reader.pages)
+#     book_txt_lst=[]
+#     for n in range(8,pg_cnt):
+#         txt=''
+#         txt = reader.pages[n].extract_text().replace('\t',' ').replace('\n',' ')
+#         txt_lst = txt.spdf=pd.read_csv('book_txt.csv',header=0,sep=',',index_col=False,names=['ids','Text'])lit('.')
+#         for item in txt_lst:
+#             book_txt_lst.append(item)
+#     book_txt_lst_clean = list(set(book_txt_lst))
+#     book_txt_lst_final=[]
+#     idx=0
+#     for item in book_txt_lst_clean:
+#         item.strip()
+#         t=(idx,item)
+#         book_txt_lst_final.append(t)
+#         idx+=1
+#     pdf_df = pd.DataFrame(book_txt_lst_final,columns=['ids','Text'])
+#     return pdf_df
+
+def get_query():    
+    query_text = input('Please ask a question?\n\n\n')
+    return query_text
+
+def get_pdf_doc_name():
+    pdf_doc_name = input('Please provide the pdf document name (eg myfilename.pdf)  (eg myfilename.pdf) ?\n')
+    return pdf_doc_name
+
+# def get_pdf_embdeddings(df,encoder):
+#     #GET ENCODER FROM TENSORFLOW HUB
+#     questions = df.Text.tolist()[1:607]
+#     question_embeddings = encode_text_to_embedding(text_encoder=encoder, sentences=questions )    
+#     return question_embeddings
+
+def get_query_embedding(query_text,encoder):
+    query_embedding = encode_text_to_embedding(text_encoder = encoder,
+                                               sentences    = [query_text]
+                                              )
+    return query_embedding
+
+def get_context(df,pdf_embeddings,query_embedding):
+    questions = df.Text.tolist()[1:607]
+    scores = np.dot(query_embedding, pdf_embeddings.T)
+    context=''
+    # Print top 20 matches
+    for index, (question, score) in enumerate(sorted(zip(questions, scores), key=lambda x: x[1], reverse=True)[:20]):
+        txt=''
+        txt=f"{index}: {question}: {score}"
+        context+=txt
+        #print(f"\t{index}: {question}: {score}")
+    print(context)
+    return context
+
+def get_query_response_using_context(context,query_text):
+    print('Step 10 : Generate Response')
+    context = 'Provide a summary for the following article: '+context
+    print('\n\n\n\n')
+    print(context)
+    print('\n\n\n\n')
+    print('Below is the response to the Query :  ',query_text)
+    print('\n\n')
+    model    = TextGenerationModel.from_pretrained("text-bison@001")
+    response = model.predict(context,**parameters)
+    slow_type(response.text)
+    print('\n\n')
+    return response.text
+
+
+
+if __name__ == "__main__":
+    # PROJECT_ID = "gcp-project-0523"
+    # REGION     = 'us-central1'
+    # BUCKET     = 'gcp-project-0523-ann-bucket'
+    # BUCKET_URI = 'gs://gcp-project-0523-ann-bucket'
+    # aiplatform.init(project  = PROJECT_ID,
+    #                 location = REGION,
+    #                )
+    parameters = {"temperature": 0.2,
+                  "max_output_tokens": 256,
+                  "top_p": 0.95,
+                  "top_k": 40
+                 }
+    from text_embeddings import encode_text_to_embedding
+    from tensorflow_encoder import get_encoder
+    encoder             = get_encoder()
+
+    
+    #pdf_doc_df          = read_pdf_doc_to_df(pdf_doc_name)
+    #question_embeddings = get_pdf_embdeddings(pdf_doc_df,encoder)
+    
+    pdf_doc_name        = get_pdf_doc_name()
+    pdf_filename        = pdf_doc_name.split('.')[0] #GET THE LEFT PART OF THE DOCUMENT NAME
+    pdf_embeddings      = read_embedding_nyp_file(pdf_filename)
+    pdf_embeddings_metadata_df = read_embeddings_metadata_from_csv(pdf_filename) #READ THE METADATA (PDF DOCUMENT) FROM CSV FILE
+    
+    while True:
+        query_text          = get_query() #GET QUERY FROM USER
+        query_embedding     = get_query_embedding(query_text,encoder)
+        context             = get_context(pdf_embeddings_metadata_df,pdf_embeddings,query_embedding)
+        response_txt        = get_query_response_using_context(context,query_text)#USING LLM TO CREATE THE RESPONSE
+        
+        #os.system('clear')
+        print("Press enter to re-run the script, CTRL-C to exit\n\n")
+        sys.stdin.readline()

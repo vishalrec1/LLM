@@ -1,0 +1,18 @@
+from typing import List
+import numpy as np
+from tqdm.auto import tqdm
+import tensorflow_hub as hub
+import tensorflow as tf
+
+def encode_text_to_embedding(text_encoder: hub.KerasLayer,
+                             sentences: List[str], 
+                             batch_size: int = 100
+                            ) -> np.ndarray:
+    embeddings_list = []
+
+    # Process data in chunks to prevent out-of-memory errors
+    for i in tqdm(range(0, len(sentences), batch_size)):
+        batch = sentences[i : i + batch_size]
+        embeddings_list.append(text_encoder(tf.constant(batch)))
+
+    return np.squeeze(np.column_stack(embeddings_list))
